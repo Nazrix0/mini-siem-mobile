@@ -14,7 +14,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'Pełny przepływ UI: logowanie JWT, podgląd alertów, zgłoszenie offline i synchronizacja',
+    'Pełny przepływ UI na urządzeniu: logowanie JWT, alerty, zgłoszenie offline z IP i synchronizacja',
     (WidgetTester tester) async {
       final tempDir = Directory.systemTemp.createTempSync('siem_ui_test_');
       int incidentsPosted = 0;
@@ -37,12 +37,12 @@ void main() {
             jsonEncode([
               {
                 'id': 1,
-                'timestamp': '2026-11-25T16:00:00Z',
+                'timestamp': '2026-11-26T16:00:00Z',
                 'ip': '10.0.0.5',
                 'type': 'SQL_INJECTION',
                 'desc': 'Testowy alert SQLi',
                 'status': 'NEW',
-                'updated_at': '2026-11-25T16:00:00Z',
+                'updated_at': '2026-11-26T16:00:00Z',
               }
             ]),
             200,
@@ -70,10 +70,10 @@ void main() {
       await tester.tap(find.byKey(const Key('login_button')));
       await tester.pumpAndSettle();
 
-      // 2. Weryfikacja pobranego alertu na ekranie głównym
+      // 2. Weryfikacja pobranego alertu
       expect(find.textContaining('SQL_INJECTION'), findsOneWidget);
 
-      // 3. Symulacja trybu offline i przejście do zakładki Zgłoś incydent
+      // 3. Tryb offline i zgłoszenie incydentu z ręcznym adresem IP
       syncService.isOnline = false;
       await tester.tap(find.text('Zgłoś incydent'));
       await tester.pumpAndSettle();
@@ -81,15 +81,20 @@ void main() {
       await tester.enterText(
           find.byKey(const Key('incident_asset')), 'SRV-LAB-07');
       await tester.enterText(
+          find.byKey(const Key('incident_source_ip')), '192.168.10.50');
+      await tester.enterText(
           find.byKey(const Key('incident_desc')), 'Nieautoryzowany pendrive');
-      await tester.tap(find.byKey(const Key('incident_submit')));
+
+      final submitBtn = find.byKey(const Key('incident_submit'));
+      await tester.ensureVisible(submitBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(submitBtn);
       await tester.pumpAndSettle();
 
-      // Incydent musi trafić do lokalnej kolejki Hive (offline)
       expect(syncService.pendingCount, 1);
       expect(incidentsPosted, 0);
 
-      // 4. Powrót sieci i automatyczna synchronizacja kolejki
+      // 4. Powrót sieci i synchronizacja kolejki Hive
       syncService.isOnline = true;
       await syncService.syncAll();
       await tester.pumpAndSettle();

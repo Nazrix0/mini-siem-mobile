@@ -1,20 +1,16 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mini_siem_mobile/main.dart';
 import 'package:mini_siem_mobile/services/sync_service.dart';
 
 void main() {
-
   testWidgets(
     'Pełny przepływ UI: logowanie JWT, podgląd alertów, zgłoszenie offline i synchronizacja',
     (WidgetTester tester) async {
-      final tempDir = Directory.systemTemp.createTempSync('siem_ui_test_');
       int incidentsPosted = 0;
 
       final mockClient = MockClient((request) async {
@@ -35,12 +31,12 @@ void main() {
             jsonEncode([
               {
                 'id': 1,
-                'timestamp': '2026-11-25T16:00:00Z',
+                'timestamp': '2026-11-26T14:00:00Z',
                 'ip': '10.0.0.5',
                 'type': 'SQL_INJECTION',
                 'desc': 'Testowy alert SQLi',
                 'status': 'NEW',
-                'updated_at': '2026-11-25T16:00:00Z',
+                'updated_at': '2026-11-26T14:00:00Z',
               }
             ]),
             200,
@@ -58,7 +54,7 @@ void main() {
         client: mockClient,
         enableConnectivity: false,
       );
-      await syncService.init(testPath: tempDir.path);
+      await syncService.init(inMemory: true);
 
       await tester.pumpWidget(MiniSiemApp(syncService: syncService));
       await tester.pumpAndSettle();
@@ -80,10 +76,14 @@ void main() {
           find.byKey(const Key('incident_asset')), 'SRV-LAB-07');
       await tester.enterText(
           find.byKey(const Key('incident_desc')), 'Nieautoryzowany pendrive');
-      await tester.tap(find.byKey(const Key('incident_submit')));
-      await tester.pumpAndSettle();
 
-      // Incydent musi trafić do lokalnej kolejki Hive (offline)
+      final submitBtn = find.byKey(const Key('incident_submit'));
+      await tester.ensureVisible(submitBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(submitBtn);
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.textContaining('kolejce offline'), findsOneWidget);
       expect(syncService.pendingCount, 1);
       expect(incidentsPosted, 0);
 
@@ -95,8 +95,7 @@ void main() {
       expect(syncService.pendingCount, 0);
       expect(incidentsPosted, 1);
 
-      await Hive.close();
-      tempDir.deleteSync(recursive: true);
+      syncService.dispose();
     },
   );
 }

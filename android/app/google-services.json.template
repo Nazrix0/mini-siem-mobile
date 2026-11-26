@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "713847171544",
+    "project_id": "mini-siem-p2",
+    "storage_bucket": "mini-siem-p2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:713847171544:android:4d9a05614c0c753d336aad",
+        "android_client_info": {
+          "package_name": "pl.pk.minisiem.mini_siem_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "__FIREBASE_API_KEY__"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -8,6 +8,61 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 import 'http_client_stub.dart' if (dart.library.io) 'http_client_io.dart';
 
+abstract class _BoxStore {
+  int get length;
+  Iterable<dynamic> get keys;
+  dynamic get(dynamic key);
+  Future<void> put(dynamic key, dynamic value);
+  Future<int> add(dynamic value);
+  Future<void> delete(dynamic key);
+  Future<void> clear();
+}
+
+class _HiveBoxStore implements _BoxStore {
+  final Box _box;
+  _HiveBoxStore(this._box);
+
+  @override
+  int get length => _box.length;
+  @override
+  Iterable<dynamic> get keys => _box.keys;
+  @override
+  dynamic get(dynamic key) => _box.get(key);
+  @override
+  Future<void> put(dynamic key, dynamic value) => _box.put(key, value);
+  @override
+  Future<int> add(dynamic value) => _box.add(value);
+  @override
+  Future<void> delete(dynamic key) => _box.delete(key);
+  @override
+  Future<void> clear() async => _box.clear();
+}
+
+class _MemoryBoxStore implements _BoxStore {
+  final Map<dynamic, dynamic> _data = {};
+  int _autoKey = 0;
+
+  @override
+  int get length => _data.length;
+  @override
+  Iterable<dynamic> get keys => _data.keys;
+  @override
+  dynamic get(dynamic key) => _data[key];
+  @override
+  Future<void> put(dynamic key, dynamic value) async => _data[key] = value;
+  @override
+  Future<int> add(dynamic value) async {
+    final k = _autoKey++;
+    _data[k] = value;
+    return k;
+  }
+
+  @override
+  Future<void> delete(dynamic key) async => _data.remove(key);
+  @override
+  Future<void> clear() async => _data.clear();
+}
+
 class SyncService extends ChangeNotifier {
   static const _authBoxName = 'auth_box';
   static const _alertsBoxName = 'alerts_box';
@@ -21,10 +76,10 @@ class SyncService extends ChangeNotifier {
       : _client = client ?? createSecureHttpClient(),
         _enableConnectivity = enableConnectivity;
 
-  late Box _authBox;
-  late Box _alertsBox;
-  late Box _pendingIncidentsBox;
-  late Box _pendingUpdatesBox;
+  late _BoxStore _authBox;
+  late _BoxStore _alertsBox;
+  late _BoxStore _pendingIncidentsBox;
+  late _BoxStore _pendingUpdatesBox;
 
   StreamSubscription<List<ConnectivityResult>>? _connSub;
 
@@ -55,16 +110,25 @@ class SyncService extends ChangeNotifier {
     return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  Future<void> init({String? testPath}) async {
-    if (testPath != null) {
-      Hive.init(testPath);
+  Future<void> init({String? testPath, bool inMemory = false}) async {
+    if (inMemory) {
+      _authBox = _MemoryBoxStore();
+      _alertsBox = _MemoryBoxStore();
+      _pendingIncidentsBox = _MemoryBoxStore();
+      _pendingUpdatesBox = _MemoryBoxStore();
     } else {
-      await Hive.initFlutter();
+      if (testPath != null) {
+        Hive.init(testPath);
+      } else {
+        await Hive.initFlutter();
+      }
+      _authBox = _HiveBoxStore(await Hive.openBox(_authBoxName));
+      _alertsBox = _HiveBoxStore(await Hive.openBox(_alertsBoxName));
+      _pendingIncidentsBox =
+          _HiveBoxStore(await Hive.openBox(_pendingIncidentsBoxName));
+      _pendingUpdatesBox =
+          _HiveBoxStore(await Hive.openBox(_pendingUpdatesBoxName));
     }
-    _authBox = await Hive.openBox(_authBoxName);
-    _alertsBox = await Hive.openBox(_alertsBoxName);
-    _pendingIncidentsBox = await Hive.openBox(_pendingIncidentsBoxName);
-    _pendingUpdatesBox = await Hive.openBox(_pendingUpdatesBoxName);
 
     if (_enableConnectivity) {
       final initial = await Connectivity().checkConnectivity();
