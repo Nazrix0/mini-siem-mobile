@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -10,7 +11,7 @@ void main() async {
 
   final syncService = SyncService();
   await syncService.init();
-  await PushService.init(syncService);
+  unawaited(PushService.init(syncService));
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     startupSw.stop();
@@ -327,7 +328,7 @@ class AlertsTab extends StatelessWidget {
                   Text('${a['desc']}'),
                   const SizedBox(height: 4),
                   Text(
-                    'IP/Źródło: ${a['ip']} | UTC: ${a['updated_at'] ?? a['timestamp']}',
+                    'Adres IP/Źródło: ${a['ip']}${a['reported_by'] != null ? " (${a['reported_by']})" : ""} | UTC: ${a['updated_at'] ?? a['timestamp']}',
                     style: const TextStyle(fontSize: 11, color: Colors.black54),
                   ),
                   if (assetId != null || lat != null)
@@ -377,6 +378,7 @@ class ReportIncidentTab extends StatefulWidget {
 
 class _ReportIncidentTabState extends State<ReportIncidentTab> {
   final _assetCtrl = TextEditingController();
+  final _sourceIpCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   String _severity = 'HIGH';
   double? _lat;
@@ -438,12 +440,14 @@ class _ReportIncidentTabState extends State<ReportIncidentTab> {
       assetId: _assetCtrl.text,
       description: _descCtrl.text,
       severity: _severity,
+      sourceIp: _sourceIpCtrl.text,
       latitude: _lat,
       longitude: _lon,
     );
     if (mounted) {
       setState(() {
         _sending = false;
+        _sourceIpCtrl.clear();
         _descCtrl.clear();
       });
       ScaffoldMessenger.of(context)
@@ -477,6 +481,16 @@ class _ReportIncidentTabState extends State<ReportIncidentTab> {
                 label: const Text('Skanuj'),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const Key('incident_source_ip'),
+            controller: _sourceIpCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Adres IP / źródło (opcjonalnie)',
+              hintText: 'Puste = automatyczne IP telefonu z VPN',
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(

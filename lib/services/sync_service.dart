@@ -185,13 +185,16 @@ class SyncService extends ChangeNotifier {
     required String assetId,
     required String description,
     required String severity,
+    String? sourceIp,
     double? latitude,
     double? longitude,
   }) async {
+    final cleanedIp = sourceIp?.trim();
     final payload = {
       'asset_id': assetId.trim(),
       'description': description.trim(),
       'severity': severity,
+      if (cleanedIp != null && cleanedIp.isNotEmpty) 'source_ip': cleanedIp,
       'latitude': latitude,
       'longitude': longitude,
       'client_created_at': DateTime.now().toUtc().toIso8601String(),
