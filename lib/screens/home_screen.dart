@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/sync_service.dart';
 import 'alerts_tab.dart';
@@ -12,8 +13,58 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _tabIndex = 0;
+  Timer? _autoRefreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startAutoRefresh();
+  }
+
+  void _startAutoRefresh() {
+    if (!widget.syncService.autoRefreshEnabled) return;
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      final s = widget.syncService;
+      if (s.isLoggedIn &&
+          s.isOnline &&
+          !s.isSyncing &&
+          !s.pendingOnlineVerification) {
+        unawaited(s.fetchAlerts());
+      }
+    });
+  }
+
+  void _stopAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Natychmiastowe odświeżenie po powrocie do aplikacji lub kliknięciu w Push
+      if (widget.syncService.isLoggedIn) {
+        unawaited(widget.syncService.syncAll());
+      }
+      _startAutoRefresh();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      // W tle wyłączamy timer, aby nie zużywać baterii
+      _stopAutoRefresh();
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopAutoRefresh();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   void _openMetrics() {
     showModalBottomSheet(
@@ -81,18 +132,70 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
+          if (s.lastLwwNotice != null)
+            Container(
+              width: double.infinity,
+              color: s.lastLwwClientWon
+                  ? Colors.teal.shade100
+                  : Colors.amber.shade200,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    s.lastLwwClientWon ? Icons.check_circle : Icons.merge_type,
+                    size: 16,
+                    color: s.lastLwwClientWon
+                        ? Colors.teal.shade900
+                        : Colors.brown.shade900,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.lastLwwNotice!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: s.lastLwwClientWon
+                            ? Colors.teal.shade900
+                            : Colors.brown.shade900,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: s.clearLwwNotice,
+                    child: const Padding(
+                      padding: EdgeInsets.all(2),
+                      child: Icon(Icons.close, size: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (s.lastPushNotice != null)
             Container(
               width: double.infinity,
               color: Colors.red.shade100,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: Text(
-                'PUSH: ${s.lastPushNotice}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.red.shade900,
-                  fontWeight: FontWeight.bold,
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'PUSH: ${s.lastPushNotice}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade900,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: s.clearPushNotice,
+                    child: const Padding(
+                      padding: EdgeInsets.all(2),
+                      child: Icon(Icons.close, size: 16),
+                    ),
+                  ),
+                ],
               ),
             ),
           Expanded(

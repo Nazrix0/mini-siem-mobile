@@ -57,6 +57,20 @@ class SyncService extends ChangeNotifier {
   String fcmStatus = 'Nieaktywny (brak klucza Firebase)';
   String? _cachedFcmToken;
   String? lastPushNotice;
+  String? lastLwwNotice;
+  bool lastLwwClientWon = true;
+
+  bool get autoRefreshEnabled => _enableConnectivity;
+
+  void clearLwwNotice() {
+    lastLwwNotice = null;
+    notifyListeners();
+  }
+
+  void clearPushNotice() {
+    lastPushNotice = null;
+    notifyListeners();
+  }
 
   String? get token => _authBox.get('token') as String?;
   String? get username => _authBox.get('username') as String?;
@@ -169,8 +183,8 @@ class SyncService extends ChangeNotifier {
   void handleIncomingPush(String title, String body) {
     lastPushNotice = '$title: $body';
     notifyListeners();
-    if (isLoggedIn && isOnline) {
-      unawaited(fetchAlerts());
+    if (isLoggedIn) {
+      unawaited(syncAll());
     }
   }
 
@@ -459,7 +473,10 @@ class SyncService extends ChangeNotifier {
     await _alertsBox.put('list', current);
   }
 
-  Future<String?> _sendStatusPatch(AlertMap task) async {
+  Future<String?> _sendStatusPatch(
+    AlertMap task, {
+    bool fromOfflineQueue = false,
+  }) async {
     try {
       final body = jsonEncode({
         'status': task['status'],
@@ -475,17 +492,28 @@ class SyncService extends ChangeNotifier {
         final data = jsonDecode(res.body) as AlertMap;
         if (data['alert'] is Map) {
           final serverAlert = AlertMap.from(data['alert'] as Map);
-          // Uzupełnij istniejący rekord polami z serwera (np. status, updated_at)
           final existing = cachedAlerts.firstWhere(
             (a) => a['id'] == task['alert_id'],
-            orElse: () => <String, dynamic>{},
+            orElse: () => AlertMap(),
           );
           await _applySingleAlertToCache({...existing, ...serverAlert});
         }
         if (data['conflict_resolved'] == true) {
           final msg =
-              'Konflikt LWW #${task['alert_id']}: wygrał serwer (${data['reason']})';
+              'Konflikt LWW #${task['alert_id']}: wygrał SERWER (${data['reason']})';
           conflictLog.insert(0, msg);
+          lastLwwClientWon = false;
+          lastLwwNotice = msg;
+          notifyListeners();
+          return msg;
+        }
+        if (fromOfflineQueue) {
+          final msg =
+              'LWW #${task['alert_id']}: wygrał TELEFON (zastosowano ${task['status']})';
+          conflictLog.insert(0, msg);
+          lastLwwClientWon = true;
+          lastLwwNotice = msg;
+          notifyListeners();
           return msg;
         }
         return 'Zaktualizowano status alertu #${task['alert_id']}';
@@ -545,7 +573,7 @@ class SyncService extends ChangeNotifier {
         final raw = _pendingUpdatesBox.get(key);
         if (raw == null) continue;
         final task = AlertMap.from(raw as Map);
-        final outcome = await _sendStatusPatch(task);
+        final outcome = await _sendStatusPatch(task, fromOfflineQueue: true);
         if (outcome != null) {
           await _pendingUpdatesBox.delete(key);
         }
